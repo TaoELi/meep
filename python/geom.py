@@ -846,6 +846,15 @@ class NoisyLorentzianSusceptibility(LorentzianSusceptibility):
         self.noise_amp = noise_amp
 
 
+class BathLorentzianSusceptibility(LorentzianSusceptibility):
+
+    def __init__(self, num_bath=0, bath_frequencies=None, bath_couplings=None, bath_gammas=None, **kwargs):
+        super().__init__(**kwargs)
+        self.num_bath = num_bath
+        self.bath_frequencies = bath_frequencies.copy() if bath_frequencies is not None else []
+        self.bath_couplings = bath_couplings.copy() if bath_couplings is not None else []
+        self.bath_gammas = bath_gammas.copy() if bath_gammas is not None else []
+
 class NoisyDrudeSusceptibility(DrudeSusceptibility):
     """
     Specifies a single dispersive susceptibility of Lorentzian (damped harmonic

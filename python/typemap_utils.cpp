@@ -17,6 +17,7 @@
 
 // Utility functions for pymeep typemaps
 
+#include "meep.hpp"
 #if PY_MAJOR_VERSION >= 3
 #define PyObject_ToCharPtr(n) PyUnicode_AsUTF8(n)
 #define IsPyString(n) PyUnicode_Check(n)
@@ -406,6 +407,10 @@ static int py_susceptibility_to_susceptibility(PyObject *po, susceptibility_stru
   s->gamma = 0;
   s->alpha = 0;
   s->noise_amp = 0;
+  s->num_bath = 0;
+  s->bath_frequencies.resize(0);
+  s->bath_couplings.resize(0);
+  s->bath_gammas.resize(0);
   s->bias.x = s->bias.y = s->bias.z = 0;
   s->saturated_gyrotropy = false;
   s->transitions.resize(0);
@@ -421,6 +426,46 @@ static int py_susceptibility_to_susceptibility(PyObject *po, susceptibility_stru
 
   if (PyObject_HasAttrString(po, "noise_amp")) {
     if (!get_attr_dbl(po, &s->noise_amp, "noise_amp")) { return 0; }
+  }
+
+  if (PyObject_HasAttrString(po, "num_bath")) {
+    if (!get_attr_int(po, &s->num_bath, "num_bath")) { return 0; }
+  }
+
+  // Get bath_frequencies if present
+  if (PyObject_HasAttrString(po, "bath_frequencies")){
+    PyObject *py_bath_freq = PyObject_GetAttrString(po, "bath_frequencies");
+    if (!py_bath_freq) { return 0; }
+    int len_bf = PyList_Size(py_bath_freq);
+    s->bath_frequencies.resize(len_bf);
+    for (int i = 0; i < len_bf; ++i) {
+      s->bath_frequencies[i] = PyFloat_AsDouble(PyList_GetItem(py_bath_freq, i));
+    }
+    Py_DECREF(py_bath_freq);
+  }
+
+  // Get bath_couplings if present
+  if (PyObject_HasAttrString(po, "bath_couplings")){
+    PyObject *py_bath_coup = PyObject_GetAttrString(po, "bath_couplings");
+    if (!py_bath_coup) { return 0; }
+    int len_bc = PyList_Size(py_bath_coup);
+    s->bath_couplings.resize(len_bc);
+    for (int i = 0; i < len_bc; ++i) {
+      s->bath_couplings[i] = PyFloat_AsDouble(PyList_GetItem(py_bath_coup, i));
+    }
+    Py_DECREF(py_bath_coup);
+  }
+
+  // Get bath_gammas if present
+  if (PyObject_HasAttrString(po, "bath_gammas")){
+    PyObject *py_bath_gammas = PyObject_GetAttrString(po, "bath_gammas");
+    if (!py_bath_gammas) { return 0; }
+    int len_bg = PyList_Size(py_bath_gammas);
+    s->bath_gammas.resize(len_bg);
+    for (int i = 0; i < len_bg; ++i) {
+      s->bath_gammas[i] = PyFloat_AsDouble(PyList_GetItem(py_bath_gammas, i));
+    }
+    Py_DECREF(py_bath_gammas);
   }
 
   if (PyObject_HasAttrString(po, "bias")) {
@@ -646,7 +691,41 @@ static PyObject *susceptibility_to_py_obj(const susceptibility_struct *s) {
   PyObject *res;
   PyObject *args = PyTuple_New(0);
 
-  if (s->saturated_gyrotropy || s->bias.x || s->bias.y || s->bias.z) {
+  // Use an if/else chain to choose exactly one type.
+  if (s->num_bath > 0 && s->bath_frequencies.size() > 0) {
+    PyObject *py_bath_lorentz_class = PyObject_GetAttrString(geom_mod, "BathLorentzianSusceptibility");
+    res = PyObject_Call(py_bath_lorentz_class, args, NULL);
+    Py_DECREF(py_bath_lorentz_class);
+
+    // Use PyLong_FromLong in Python 3
+    PyObject *py_num_bath = PyLong_FromLong(s->num_bath);
+    PyObject_SetAttrString(res, "num_bath", py_num_bath);
+    Py_DECREF(py_num_bath);
+
+    // Convert bath_frequencies vector to a Python list
+    PyObject *py_bath_frequencies = PyList_New(s->bath_frequencies.size());
+    for (size_t i = 0; i < s->bath_frequencies.size(); ++i) {
+      PyList_SET_ITEM(py_bath_frequencies, i, PyFloat_FromDouble(s->bath_frequencies[i]));
+    }
+    PyObject_SetAttrString(res, "bath_frequencies", py_bath_frequencies);
+    Py_DECREF(py_bath_frequencies);
+
+    // Similarly for bath_couplings and bath_gammas...
+    PyObject *py_bath_couplings = PyList_New(s->bath_couplings.size());
+    for (size_t i = 0; i < s->bath_couplings.size(); ++i) {
+      PyList_SET_ITEM(py_bath_couplings, i, PyFloat_FromDouble(s->bath_couplings[i]));
+    }
+    PyObject_SetAttrString(res, "bath_couplings", py_bath_couplings);
+    Py_DECREF(py_bath_couplings);
+
+    PyObject *py_bath_gammas = PyList_New(s->bath_gammas.size());
+    for (size_t i = 0; i < s->bath_gammas.size(); ++i) {
+      PyList_SET_ITEM(py_bath_gammas, i, PyFloat_FromDouble(s->bath_gammas[i]));
+    }
+    PyObject_SetAttrString(res, "bath_gammas", py_bath_gammas);
+    Py_DECREF(py_bath_gammas);
+  }
+  else if (s->saturated_gyrotropy || s->bias.x || s->bias.y || s->bias.z) {
     if (s->saturated_gyrotropy) {
       PyObject *py_gyrotropic_class =
           PyObject_GetAttrString(geom_mod, "GyrotropicSaturatedSusceptibility");

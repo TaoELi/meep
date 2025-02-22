@@ -1834,6 +1834,7 @@ void geom_epsilon::add_susceptibilities(meep::field_type ft, meep::structure *s)
     susceptibility *ss = &(p->user_s);
     if (ss->is_file) meep::abort("unknown susceptibility");
     bool noisy = (ss->noise_amp != 0.0);
+    bool bath_lorentzian = (ss->num_bath > 0);
     bool gyrotropic =
         (ss->saturated_gyrotropy || ss->bias.x != 0.0 || ss->bias.y != 0.0 || ss->bias.z != 0.0);
     meep::susceptibility *sus;
@@ -1847,6 +1848,11 @@ void geom_epsilon::add_susceptibilities(meep::field_type ft, meep::structure *s)
       if (noisy) {
         sus = new meep::noisy_lorentzian_susceptibility(ss->noise_amp, ss->frequency, ss->gamma,
                                                         ss->drude);
+      }
+      else if (bath_lorentzian) {
+        sus = new meep::bath_lorentzian_susceptibility(ss->frequency, ss->gamma,
+          ss->num_bath, ss->bath_frequencies, ss->bath_couplings, 
+          ss->bath_gammas, ss->drude);
       }
       else if (gyrotropic) {
         meep::gyrotropy_model model = ss->saturated_gyrotropy ? meep::GYROTROPIC_SATURATED

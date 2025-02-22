@@ -60,6 +60,11 @@ typedef struct susceptibility_struct {
   bool is_file;
   std::vector<transition> transitions;
   std::vector<double> initial_populations;
+  // add data for the lovely bath-lorentz medium
+  int num_bath;
+  std::vector<double> bath_frequencies;
+  std::vector<double> bath_couplings;
+  std::vector<double> bath_gammas;
 } susceptibility;
 
 using susceptibility_list = std::vector<susceptibility>;

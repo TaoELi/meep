@@ -298,6 +298,44 @@ protected:
   realnum noise_amp;
 };
 
+/* like a Lorentzian susceptibility, but the polarization interacts with a collection of explicit
+harmonic oscillators as the bath instead of a simple decay function */
+class bath_lorentzian_susceptibility : public lorentzian_susceptibility {
+public:
+  bath_lorentzian_susceptibility(realnum omega_0, realnum gamma, int num_bath,
+                                 const std::vector<realnum> &bath_frequencies,
+                                 const std::vector<realnum> &bath_couplings,
+                                 const std::vector<realnum> &bath_gammas,
+                                 bool no_omega_0_denominator = false)
+      : lorentzian_susceptibility(omega_0, gamma, no_omega_0_denominator), num_bath(num_bath),
+        bath_frequencies(bath_frequencies), bath_couplings(bath_couplings),
+        bath_gammas(bath_gammas) {}
+
+  virtual susceptibility *clone() const { return new bath_lorentzian_susceptibility(*this); }
+
+  virtual void update_P(realnum *W[NUM_FIELD_COMPONENTS][2],
+                        realnum *W_prev[NUM_FIELD_COMPONENTS][2], realnum dt, const grid_volume &gv,
+                        void *P_internal_data) const;
+
+  // Override memory management methods to allocate extra state for the bath oscillators.
+  virtual void *new_internal_data(realnum *W[NUM_FIELD_COMPONENTS][2], const grid_volume &gv) const;
+  virtual void init_internal_data(realnum *W[NUM_FIELD_COMPONENTS][2], realnum dt,
+                                  const grid_volume &gv, void *data) const;
+  virtual void *copy_internal_data(void *data) const;
+
+  virtual void dump_params(h5file *h5f, size_t *start);
+  virtual int get_num_params() {
+    return 5 + num_bath * 3 + 1;
+  }
+
+protected:
+  int num_bath;                          // Number of bath oscillators
+  std::vector<realnum> bath_frequencies; // Natural frequencies for each bath oscillator
+  std::vector<realnum>
+      bath_couplings; // Coupling constants between the Lorentz medium and each bath oscillator
+  std::vector<realnum> bath_gammas; // decay rate of each bath oscillator
+};
+
 typedef enum { GYROTROPIC_LORENTZIAN, GYROTROPIC_DRUDE, GYROTROPIC_SATURATED } gyrotropy_model;
 
 /* gyrotropic susceptibility */

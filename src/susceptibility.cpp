@@ -26,6 +26,7 @@
    array.  The meep::fields class is responsible for allocating P and
    sigma and passing them to susceptibility::update_P. */
 
+#include <numeric>
 #include <stdlib.h>
 #include <string.h>
 #include "meep.hpp"
@@ -196,7 +197,6 @@ void lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2],
   (void)W_prev; // unused;
 
   // TODO: add back lorentzian_unstable(omega_0, gamma, dt) if we can improve the stability test
-
   FOR_COMPONENTS(c) DOCMP2 {
     if (d->P[c][cmp]) {
       const realnum *w = W[c][cmp], *s = sigma[c][component_direction(c)];
@@ -345,6 +345,250 @@ void noisy_lorentzian_susceptibility::dump_params(h5file *h5f, size_t *start) {
       5, (realnum)get_id(), noise_amp, omega_0, gamma, (realnum)no_omega_0_denominator};
   h5f->write_chunk(1, start, params_dims, params_data);
   *start += num_params;
+}
+
+void *bath_lorentzian_susceptibility::new_internal_data(realnum *W[NUM_FIELD_COMPONENTS][2],
+                                                        const grid_volume &gv) const {
+  // Compute the number of realnum values required for the polarization data + the bath oscillator
+  // data. Each polarization direction is assigned to num_bath oscillators at each spatial grid
+  // point
+  int num = 0;
+  FOR_COMPONENTS(c) DOCMP2 {
+    if (needs_P(c, cmp, W)) num += 2 * gv.ntot() * (1 + num_bath);
+  }
+
+  // Allocate memory using the original lorentzian_data structure
+  size_t sz = sizeof(lorentzian_data) + sizeof(realnum) * (num - 1);
+  lorentzian_data *d = (lorentzian_data *)malloc(sz);
+  if (d == NULL) meep::abort("%s:%i:out of memory(%lu)", __FILE__, __LINE__, sz);
+  d->sz_data = sz;
+  return (void *)d;
+}
+
+void bath_lorentzian_susceptibility::init_internal_data(realnum *W[NUM_FIELD_COMPONENTS][2],
+                                                        realnum dt, const grid_volume &gv,
+                                                        void *data) const {
+  (void)dt; // unused
+  lorentzian_data *d = (lorentzian_data *)data;
+  size_t sz_data = d->sz_data;
+  memset(d, 0, sz_data);
+  d->sz_data = sz_data;
+  size_t ntot = d->ntot = gv.ntot();
+  realnum *P = d->data;
+  realnum *P_prev = d->data + ntot;
+  FOR_COMPONENTS(c) DOCMP2 {
+    if (needs_P(c, cmp, W)) {
+      d->P[c][cmp] = P;
+      d->P_prev[c][cmp] = P_prev;
+      // then the rest space is reserved for the bath oscillators, the pointers for these bath
+      // oscillators will be initialized when updating the P field during the dynamics motion
+      P += 2 * ntot * (1 + num_bath);
+      P_prev += 2 * ntot * (1 + num_bath);
+    }
+  }
+
+  printf("num_bath = %d \n", num_bath);
+  for (int i = 0; i < num_bath; i++)
+  {
+    printf("bath freq = %.5E\n", bath_frequencies[i]);
+    printf("bath coup = %.5E\n", bath_couplings[i]);
+    printf("bath gamma = %.5E\n", bath_gammas[i]);
+  }
+  printf("ntot = %d\n", ntot);
+  printf("size_data = %d\n", sz_data);
+  size_t sz_bath = sizeof(realnum) * 2 * gv.ntot() * num_bath;
+  printf("size_bath = %d\n", sz_bath);
+
+  printf("conventional Lorentzian param freq = %.5E\n", this->lorentzian_susceptibility::omega_0);
+  printf("conventional Lorentzian param gamma = %.5E\n", this->lorentzian_susceptibility::gamma);
+  printf("conventional Lorentzian param no_omega_0_denominator = %d\n", this->lorentzian_susceptibility::no_omega_0_denominator);
+}
+
+void *bath_lorentzian_susceptibility::copy_internal_data(void *data) const {
+  lorentzian_data *d = (lorentzian_data *)data;
+  if (!d) return 0;
+  lorentzian_data *dnew = (lorentzian_data *)malloc(d->sz_data);
+  memcpy(dnew, d, d->sz_data);
+  size_t ntot = d->ntot;
+  realnum *P = dnew->data;
+  realnum *P_prev = dnew->data + ntot;
+  FOR_COMPONENTS(c) DOCMP2 {
+    if (d->P[c][cmp]) {
+      dnew->P[c][cmp] = P;
+      dnew->P_prev[c][cmp] = P_prev;
+      // then the rest space is reserved for the bath oscillators, the pointers for these bath
+      // oscillators will be initialized when updating the P field during the dynamics motion
+      P += 2 * ntot * (1 + num_bath);
+      P_prev += 2 * ntot * (1 + num_bath);
+    }
+  }
+  return (void *)dnew;
+}
+
+void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2],
+                                         realnum *W_prev[NUM_FIELD_COMPONENTS][2], realnum dt,
+                                         const grid_volume &gv, void *P_internal_data) const {
+  lorentzian_data *d = (lorentzian_data *)P_internal_data;
+  const realnum omega2pi = 2 * pi * omega_0, g2pi = gamma * 2 * pi;
+  const realnum omega0dtsqr = omega2pi * omega2pi * dt * dt;
+  const realnum gamma1inv = 1 / (1 + g2pi * dt / 2), gamma1 = (1 - g2pi * dt / 2);
+  const realnum omega0dtsqr_denom = no_omega_0_denominator ? 0 : omega0dtsqr;
+  (void)W_prev; // unused;
+
+  // let's define some prefactors necessary for bath_lorentzian calculations
+  // first multiply the bath_frequencies and bath_gammas with a factor of 2pi for consistency
+  std::vector<realnum> bathfreq2pi, bathgamma2pi;
+  for (size_t i = 0; i < num_bath; i++)
+  {
+    bathfreq2pi.push_back(bath_frequencies[i] * 2 * pi);
+    bathgamma2pi.push_back(bath_gammas[i] * 2 * pi);
+  }
+  // second let's calculate ai, bi, and ci
+  std::vector<realnum> coeff_a, coeff_b, coeff_c, coeff_ak, coeff_bk;
+  for (size_t i = 0; i < num_bath; i++)
+  {
+    realnum denom = 1.0 + bathgamma2pi[i] * dt / 2.0;
+    realnum ai = (2.0 - bathfreq2pi[i] * bathfreq2pi[i] * dt * dt) / denom;
+    realnum bi = -2.0 / denom;
+    realnum ci = bath_couplings[i] * dt / 2.0 / denom;
+    coeff_a.push_back(ai);
+    coeff_b.push_back(bi);
+    coeff_c.push_back(ci);
+    coeff_ak.push_back(ai * bathgamma2pi[i]);
+    coeff_bk.push_back(bi * bathgamma2pi[i]);
+  }
+  realnum ap = 1.0 + dt / 2.0 * std::inner_product(bathgamma2pi.begin(), bathgamma2pi.end(), coeff_c.begin(), 0.0);
+  realnum prefactor_pnminus = 1.0 - dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
+
+  // TODO: add back lorentzian_unstable(omega_0, gamma, dt) if we can improve the stability test
+  FOR_COMPONENTS(c) DOCMP2 {
+    if (d->P[c][cmp]) {
+      const realnum *w = W[c][cmp], *s = sigma[c][component_direction(c)];
+      if (w && s) {
+        realnum *p = d->P[c][cmp], *pp = d->P_prev[c][cmp];
+        // also create pointers for the bath oscillators
+        realnum *p_bath[num_bath];
+        realnum *pp_bath[num_bath];
+        for (size_t k = 0; k < num_bath; k++)
+        {
+            p_bath[k] = pp + d->ntot + d->ntot * k * 2;
+            pp_bath[k] = pp + d->ntot + d->ntot * (k * 2 + 1);
+        }
+
+        // directions/strides for offdiagonal terms, similar to update_eh
+        const direction d = component_direction(c);
+        const ptrdiff_t is = gv.stride(d) * (is_magnetic(c) ? -1 : +1);
+        direction d1 = cycle_direction(gv.dim, d, 1);
+        component c1 = direction_component(c, d1);
+        ptrdiff_t is1 = gv.stride(d1) * (is_magnetic(c) ? -1 : +1);
+        const realnum *w1 = W[c1][cmp];
+        const realnum *s1 = w1 ? sigma[c][d1] : NULL;
+        direction d2 = cycle_direction(gv.dim, d, 2);
+        component c2 = direction_component(c, d2);
+        ptrdiff_t is2 = gv.stride(d2) * (is_magnetic(c) ? -1 : +1);
+        const realnum *w2 = W[c2][cmp];
+        const realnum *s2 = w2 ? sigma[c][d2] : NULL;
+        
+        // for 3x3 or 2x2 anisotropic systems, we keep the original code
+        if (s2 && !s1) { // make s1 the non-NULL one if possible
+          SWAP(direction, d1, d2);
+          SWAP(component, c1, c2);
+          SWAP(ptrdiff_t, is1, is2);
+          SWAP(const realnum *, w1, w2);
+          SWAP(const realnum *, s1, s2);
+        }
+        if (s1 && s2) { // 3x3 anisotropic
+          PLOOP_OVER_VOL_OWNED(gv, c, i) {
+            // s[i] != 0 check is a bit of a hack to work around
+            // some instabilities that occur near the boundaries
+            // of materials; see PR #666
+            if (s[i] != 0) {
+              realnum pcur = p[i];
+              p[i] = gamma1inv * (pcur * (2 - omega0dtsqr_denom) - gamma1 * pp[i] +
+                                  omega0dtsqr * (s[i] * w[i] + OFFDIAG(s1, w1, is1, is) +
+                                                 OFFDIAG(s2, w2, is2, is)));
+              pp[i] = pcur;
+            }
+          }
+        }
+        else if (s1) { // 2x2 anisotropic
+          PLOOP_OVER_VOL_OWNED(gv, c, i) {
+            if (s[i] != 0) { // see above
+              realnum pcur = p[i];
+              p[i] = gamma1inv * (pcur * (2 - omega0dtsqr_denom) - gamma1 * pp[i] +
+                                  omega0dtsqr * (s[i] * w[i] + OFFDIAG(s1, w1, is1, is)));
+              pp[i] = pcur;
+            }
+          }
+        }
+        else { // isotropic
+          // We only implement the bath-Lorentz model for isotropic systems
+          // TODO
+          PLOOP_OVER_VOL_OWNED(gv, c, i) {
+            // This is the equation of motion for an independent Lorentz oscillator, the damping term comes from the gamma1
+            realnum pcur = p[i];
+            std::vector<realnum> pbathcur, pbathpre;
+            for(size_t k = 0; k< num_bath; k++) 
+            {
+              pbathcur.push_back(p_bath[k][i]);
+              pbathpre.push_back(pp_bath[k][i]);
+            }
+
+            // precompute some important quantities
+            realnum sum_kiaiYi_cur = dt / 2.0 * std::inner_product(coeff_ak.begin(), coeff_ak.end(), pbathcur.begin(), 0.0);
+            realnum sum_kibiYi_pre = dt / 2.0 * std::inner_product(coeff_bk.begin(), coeff_bk.end(), pbathpre.begin(), 0.0);
+            // update P to the next time step
+            p[i] = (1.0 / ap) * (pcur * (2 - omega0dtsqr_denom) - prefactor_pnminus * pp[i] + omega0dtsqr * (s[i] * w[i]) - sum_kiaiYi_cur - sum_kibiYi_pre);
+            // update bath coordinates to the next time step
+            for (size_t k = 0; k < num_bath; k++)
+            {
+              p_bath[k][i] = coeff_a[k] * pbathcur[k] + (coeff_b[k] + 1.0) * pbathpre[k] + coeff_c[k] * (p[i] - pp[i]);
+            }
+            // reset the previous values
+            pp[i] = pcur;
+            for (size_t k = 0; k < num_bath; k++)
+            {
+              pp_bath[k][i] = pbathcur[k];
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+void bath_lorentzian_susceptibility::dump_params(h5file *h5f, size_t *start) {
+  // Total parameters: 5 base + 1 for num_bath + 3 per bath oscillator.
+  size_t num_params = 6 + num_bath * 3;
+  size_t params_dims[1] = {num_params};
+
+  // Allocate a dynamic array to hold all parameters.
+  realnum *params_data = new realnum[num_params];
+
+  // Fill in the base parameters.
+  params_data[0] = num_params - 1;
+  params_data[1] = (realnum)get_id();
+  params_data[2] = omega_0;
+  params_data[3] = gamma;
+  params_data[4] = (realnum)no_omega_0_denominator;
+
+  // Add the number of bath oscillators.
+  params_data[5] = (realnum)num_bath;
+
+  // Fill in the bath oscillator parameters.
+  size_t index = 6;
+  for (int i = 0; i < num_bath; ++i) {
+    params_data[index++] = bath_frequencies[i];
+    params_data[index++] = bath_couplings[i];
+    params_data[index++] = bath_gammas[i];
+  }
+
+  // Write the chunk.
+  h5f->write_chunk(1, start, params_dims, params_data);
+  *start += num_params;
+
+  // Clean up the dynamic array.
+  delete[] params_data;
 }
 
 gyrotropic_susceptibility::gyrotropic_susceptibility(const vec &bias, realnum omega_0,
