@@ -388,12 +388,12 @@ void bath_lorentzian_susceptibility::init_internal_data(realnum *W[NUM_FIELD_COM
   }
 
   printf("num_bath = %d \n", num_bath);
-  for (int i = 0; i < num_bath; i++)
-  {
-    printf("bath freq = %.5E\n", bath_frequencies[i]);
-    printf("bath coup = %.5E\n", bath_couplings[i]);
-    printf("bath gamma = %.5E\n", bath_gammas[i]);
-  }
+  //for (int i = 0; i < num_bath; i++)
+  //{
+  //  printf("bath freq = %.5E\n", bath_frequencies[i]);
+  //  printf("bath coup = %.5E\n", bath_couplings[i]);
+  //  printf("bath gamma = %.5E\n", bath_gammas[i]);
+  //}
   printf("ntot = %d\n", ntot);
   printf("size_data = %d\n", sz_data);
   size_t sz_bath = sizeof(realnum) * 2 * gv.ntot() * num_bath;
@@ -454,10 +454,10 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
     coeff_a.push_back(ai);
     coeff_b.push_back(bi);
     coeff_c.push_back(ci);
-    coeff_ak.push_back(ai * bathgamma2pi[i]);
-    coeff_bk.push_back(bi * bathgamma2pi[i]);
+    coeff_ak.push_back(ai * bath_couplings[i]);
+    coeff_bk.push_back(bi * bath_couplings[i]);
   }
-  realnum ap = 1.0 + dt / 2.0 * std::inner_product(bathgamma2pi.begin(), bathgamma2pi.end(), coeff_c.begin(), 0.0);
+  realnum ap = 1.0 + dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
   realnum prefactor_pnminus = 1.0 - dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
 
   // TODO: add back lorentzian_unstable(omega_0, gamma, dt) if we can improve the stability test
@@ -543,6 +543,7 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
             for (size_t k = 0; k < num_bath; k++)
             {
               p_bath[k][i] = coeff_a[k] * pbathcur[k] + (coeff_b[k] + 1.0) * pbathpre[k] + coeff_c[k] * (p[i] - pp[i]);
+              // consider to add a noisy term to account for the thermal fluctuations
             }
             // reset the previous values
             pp[i] = pcur;
