@@ -847,13 +847,60 @@ class NoisyLorentzianSusceptibility(LorentzianSusceptibility):
 
 
 class BathLorentzianSusceptibility(LorentzianSusceptibility):
+    """
+    Specifies a single dispersive susceptibility of Lorentzian form. The disspation of the polarization 
+    density is modeled via the coupling to explicit bath oscillators instead of a phenomenological damping
+    used in usual Lorentzian susceptibility. 
+    """
+    def __init__(self, num_bath=0, bath_width=None, bath_form=None,
+                 bath_frequencies=None, bath_couplings=None, bath_gammas=None, **kwargs):
+        """
+        num_bath: number of bath oscillators along each dimension in each spatial grid point.
+        When num_bath = 0, this class is reduced to **LorentzianSusceptibility**.
 
-    def __init__(self, num_bath=0, bath_frequencies=None, bath_couplings=None, bath_gammas=None, **kwargs):
+        By default, the following more direct definiton is used:
+
+        bath_frequencies: frequencies of bath oscillators in a Python list
+        bath_gammas: damping rate of bath oscillators in a Python list
+        bath_couplings: the coupling strengths between the bath oscillators and the polarization in a 
+        Python list.
+
+        If these variables are not defined, the following indirect way for initializing the bath degrees
+        of freedom is given as follows.
+
+        bath_width: The frequency span of the bath oscillators. The frequencies of the bath oscillators 
+        obey a uniform distribution within [omega_0 - bath_width/2, omega_0 + bath_width/2], where
+        omega_0 denotes the Lorentzian frequency coupled with the EM field.
+
+        bath_form: "uniform" or "lorentzian" are supported. When "lorentzian" is used, each bath oscillator
+        is coupled to the lorentzian polarization following a Lorentzian shape, while the frequencies of 
+        the bath oscillators remain the uniform distribution.
+
+        The other parameters of the bath oscillators are carefully chosen so that the overall susceptibility
+        of the polarization density looks like a bare **LorentzianSusceptibility**.
+        """
         super().__init__(**kwargs)
         self.num_bath = num_bath
+
+        # first check the direct definition 
         self.bath_frequencies = bath_frequencies.copy() if bath_frequencies is not None else []
         self.bath_couplings = bath_couplings.copy() if bath_couplings is not None else []
         self.bath_gammas = bath_gammas.copy() if bath_gammas is not None else []
+
+        # then try to apply the indirect definition
+        if num_bath >= 2 and bath_width is not None and bath_form is not None:
+            bath_frequencies = np.linspace(-bath_width/2.0, bath_width/2.0, num_bath)
+            rho_omega = 1.0 / (bath_frequencies[1] - bath_frequencies[0])
+            k = (2.0 / np.pi / rho_omega * self.gamma)**0.5 * 2.0 * np.pi 
+            if bath_form == "uniform":
+                bath_couplings = [k] * num_bath
+            elif bath_form == "lorentzian":
+                bath_couplings =  (k * (self.gamma**2 / (self.gamma**2 + (bath_frequencies)**2) )**(0.5)).tolist()
+            else:
+                ValueError("bath_form is illy definited")
+            self.bath_frequencies = (bath_frequencies + self.frequency).tolist()
+            self.bath_couplings = bath_couplings
+            self.bath_gammas = [self.gamma] * num_bath
 
 class NoisyDrudeSusceptibility(DrudeSusceptibility):
     """
