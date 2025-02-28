@@ -895,7 +895,7 @@ class BathLorentzianSusceptibility(LorentzianSusceptibility):
             if bath_form == "uniform":
                 bath_couplings = [k] * num_bath
             elif bath_form == "lorentzian":
-                bath_couplings =  (k * (self.gamma**2 / (self.gamma**2 + (bath_frequencies)**2) )**(0.5)).tolist()
+                bath_couplings =  (k * (1.5 * self.gamma**2 / (self.gamma**2 + (bath_frequencies)**2) )**(0.5)).tolist()
             else:
                 ValueError("bath_form is illy definited")
             self.bath_frequencies = (bath_frequencies + self.frequency).tolist()
