@@ -899,7 +899,7 @@ class BathLorentzianSusceptibility(LorentzianSusceptibility):
                 # the 1.5 prefactor accounts for the poles from the Lorentz function
                 bath_couplings =  (k * (1.5 * self.gamma**2 / (self.gamma**2 + (bath_frequencies)**2) )**(0.5)).tolist()
             else:
-                ValueError("bath_form is illy definited")
+                raise RuntimeError("bath_form is ill definited, only uniform and lorentzian are supported!")
             self.bath_frequencies = (bath_frequencies + self.frequency).tolist()
             self.bath_couplings = bath_couplings
             self.bath_gammas = [self.gamma] * num_bath

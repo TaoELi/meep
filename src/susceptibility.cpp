@@ -389,21 +389,21 @@ void bath_lorentzian_susceptibility::init_internal_data(realnum *W[NUM_FIELD_COM
     }
   }
 
-  printf("num_bath = %d \n", num_bath);
+  master_printf("Using Bath-Lorentzian: num_bath = %d \n", num_bath);
   //for (int i = 0; i < num_bath; i++)
   //{
   //  printf("bath freq = %.5E\n", bath_frequencies[i]);
   //  printf("bath coup = %.5E\n", bath_couplings[i]);
   //  printf("bath gamma = %.5E\n", bath_gammas[i]);
   //}
-  printf("ntot = %d\n", ntot);
-  printf("size_data = %d\n", sz_data);
-  size_t sz_bath = sizeof(realnum) * 2 * gv.ntot() * num_bath;
-  printf("size_bath = %d\n", sz_bath);
+  //printf("ntot = %d\n", ntot);
+  //printf("size_data = %d\n", sz_data);
+  //size_t sz_bath = sizeof(realnum) * 2 * gv.ntot() * num_bath;
+  //printf("size_bath = %d\n", sz_bath);
 
-  printf("conventional Lorentzian param freq = %.5E\n", this->lorentzian_susceptibility::omega_0);
-  printf("conventional Lorentzian param gamma = %.5E\n", this->lorentzian_susceptibility::gamma);
-  printf("conventional Lorentzian param no_omega_0_denominator = %d\n", this->lorentzian_susceptibility::no_omega_0_denominator);
+  printf("Bath-Lorentzian param freq = %.5E\n", this->lorentzian_susceptibility::omega_0);
+  printf("Bath-Lorentzian param gamma = %.5E\n", this->lorentzian_susceptibility::gamma);
+  //printf("conventional Lorentzian param no_omega_0_denominator = %d\n", this->lorentzian_susceptibility::no_omega_0_denominator);
 }
 
 void *bath_lorentzian_susceptibility::copy_internal_data(void *data) const {
@@ -446,7 +446,7 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
   //std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
 
   std::vector<realnum> bathfreq2pi, bathgamma2pi;
-  for (size_t i = 0; i < num_bath; i++)
+  for (int i = 0; i < num_bath; i++)
   {
     bathfreq2pi.push_back(bath_frequencies[i] * 2 * pi);
     bathgamma2pi.push_back(bath_gammas[i] * 2 * pi);
