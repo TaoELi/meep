@@ -891,10 +891,12 @@ class BathLorentzianSusceptibility(LorentzianSusceptibility):
         if num_bath >= 2 and bath_width is not None and bath_form is not None:
             bath_frequencies = np.linspace(-bath_width/2.0, bath_width/2.0, num_bath)
             rho_omega = 1.0 / (bath_frequencies[1] - bath_frequencies[0])
+            # The final 2pi factor is used because 2pi is not used within MEEP C++ for converting k
             k = (2.0 / np.pi / rho_omega * self.gamma)**0.5 * 2.0 * np.pi 
             if bath_form == "uniform":
                 bath_couplings = [k] * num_bath
             elif bath_form == "lorentzian":
+                # the 1.5 prefactor accounts for the poles from the Lorentz function
                 bath_couplings =  (k * (1.5 * self.gamma**2 / (self.gamma**2 + (bath_frequencies)**2) )**(0.5)).tolist()
             else:
                 ValueError("bath_form is illy definited")

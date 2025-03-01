@@ -31,6 +31,8 @@
 #include <string.h>
 #include "meep.hpp"
 #include "meep_internals.hpp"
+#include <iostream>
+#include <chrono>
 
 using namespace std;
 
@@ -437,6 +439,12 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
 
   // let's define some prefactors necessary for bath_lorentzian calculations
   // first multiply the bath_frequencies and bath_gammas with a factor of 2pi for consistency
+
+  // This piece of code has no problem. It is just very slow. I need to figure out the time consuming steps
+  // and then optimize it.
+  //typedef std::chrono::high_resolution_clock Clock;
+  //std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+
   std::vector<realnum> bathfreq2pi, bathgamma2pi;
   for (size_t i = 0; i < num_bath; i++)
   {
@@ -444,21 +452,42 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
     bathgamma2pi.push_back(bath_gammas[i] * 2 * pi);
   }
   // second let's calculate ai, bi, and ci
-  std::vector<realnum> coeff_a, coeff_b, coeff_c, coeff_ak, coeff_bk;
-  for (size_t i = 0; i < num_bath; i++)
+  //std::vector<realnum> coeff_a, coeff_b, coeff_c, coeff_ak, coeff_bk;
+  realnum coeff_a[num_bath], coeff_b[num_bath], coeff_bplusone[num_bath], coeff_c[num_bath], coeff_ak[num_bath], coeff_bk[num_bath];
+  for (int i = 0; i < num_bath; i++)
   {
     realnum denom = 1.0 + bathgamma2pi[i] * dt / 2.0;
     realnum ai = (2.0 - bathfreq2pi[i] * bathfreq2pi[i] * dt * dt) / denom;
     realnum bi = -2.0 / denom;
     realnum ci = bath_couplings[i] * dt / 2.0 / denom;
-    coeff_a.push_back(ai);
-    coeff_b.push_back(bi);
-    coeff_c.push_back(ci);
-    coeff_ak.push_back(ai * bath_couplings[i]);
-    coeff_bk.push_back(bi * bath_couplings[i]);
+    //coeff_a.push_back(ai);
+    //coeff_b.push_back(bi);
+    //coeff_c.push_back(ci);
+    //coeff_ak.push_back(ai * bath_couplings[i]);
+    //coeff_bk.push_back(bi * bath_couplings[i]);
+
+    coeff_a[i] = ai;
+    coeff_b[i] = bi;
+    coeff_c[i] = ci;
+    coeff_ak[i] = dt / 2.0 * ai * bath_couplings[i];
+    coeff_bk[i] = dt / 2.0 * bi * bath_couplings[i];
+    coeff_bplusone[i] = bi + 1.0;
   }
-  realnum ap = 1.0 + dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
-  realnum prefactor_pnminus = 1.0 - dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
+  //realnum ap = 1.0 + dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
+  //realnum prefactor_pnminus = 1.0 - dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
+
+  realnum ap = 1.0, prefactor_pnminus = 1.0;
+  for (int i = 0; i < num_bath; i++)
+  {
+    ap += dt / 2.0 * bath_couplings[i] * coeff_c[i];
+    prefactor_pnminus -= dt / 2.0 * bath_couplings[i] * coeff_c[i];
+  }
+  realnum apinv = 1.0 / ap;
+
+
+  //std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+  //std::chrono::duration<double> time_span = std::chrono::duration_cast< std::chrono::duration<double> >(t2 - t1);
+  //std::cout << "Update Bath Lorentz medium for one time step before for loop takes " << time_span.count() << " seconds." << std::endl;
 
   // TODO: add back lorentzian_unstable(omega_0, gamma, dt) if we can improve the stability test
   FOR_COMPONENTS(c) DOCMP2 {
@@ -469,7 +498,7 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
         // also create pointers for the bath oscillators
         realnum *p_bath[num_bath];
         realnum *pp_bath[num_bath];
-        for (size_t k = 0; k < num_bath; k++)
+        for (int k = 0; k < num_bath; k++)
         {
             p_bath[k] = pp + d->ntot + d->ntot * k * 2;
             pp_bath[k] = pp + d->ntot + d->ntot * (k * 2 + 1);
@@ -527,35 +556,52 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
           PLOOP_OVER_VOL_OWNED(gv, c, i) {
             // This is the equation of motion for an independent Lorentz oscillator, the damping term comes from the gamma1
             realnum pcur = p[i];
-            std::vector<realnum> pbathcur, pbathpre;
-            for(size_t k = 0; k< num_bath; k++) 
+            //std::vector<realnum> pbathcur, pbathpre;
+            //for(size_t k = 0; k< num_bath; k++) 
+            //{
+            //  pbathcur.push_back(p_bath[k][i]);
+            //  pbathpre.push_back(pp_bath[k][i]);
+            //}
+            realnum pbathcur[num_bath];
+            realnum sum_kiaiYi_cur = 0;
+            realnum sum_kibiYi_pre = 0;
+            for(int k = 0; k< num_bath; k++) 
             {
-              pbathcur.push_back(p_bath[k][i]);
-              pbathpre.push_back(pp_bath[k][i]);
+              pbathcur[k] = p_bath[k][i];
+              sum_kiaiYi_cur += coeff_ak[k] * pbathcur[k];
+              sum_kibiYi_pre += coeff_bk[k] * pp_bath[k][i];
             }
 
             // precompute some important quantities
-            realnum sum_kiaiYi_cur = dt / 2.0 * std::inner_product(coeff_ak.begin(), coeff_ak.end(), pbathcur.begin(), 0.0);
-            realnum sum_kibiYi_pre = dt / 2.0 * std::inner_product(coeff_bk.begin(), coeff_bk.end(), pbathpre.begin(), 0.0);
+            //realnum sum_kiaiYi_cur = dt / 2.0 * std::inner_product(coeff_ak.begin(), coeff_ak.end(), pbathcur.begin(), 0.0);
+            //realnum sum_kibiYi_pre = dt / 2.0 * std::inner_product(coeff_bk.begin(), coeff_bk.end(), pbathpre.begin(), 0.0);
             // update P to the next time step
-            p[i] = (1.0 / ap) * (pcur * (2 - omega0dtsqr_denom) - prefactor_pnminus * pp[i] + omega0dtsqr * (s[i] * w[i]) - sum_kiaiYi_cur - sum_kibiYi_pre);
+            p[i] = apinv * (pcur * (2 - omega0dtsqr_denom) - prefactor_pnminus * pp[i] + omega0dtsqr * (s[i] * w[i]) - sum_kiaiYi_cur - sum_kibiYi_pre);
             // update bath coordinates to the next time step
-            for (size_t k = 0; k < num_bath; k++)
+            realnum p_pp_diff = p[i] - pp[i];
+            for (int k = 0; k < num_bath; k++)
             {
-              p_bath[k][i] = coeff_a[k] * pbathcur[k] + (coeff_b[k] + 1.0) * pbathpre[k] + coeff_c[k] * (p[i] - pp[i]);
+              //p_bath[k][i] = coeff_a[k] * pbathcur[k] + (coeff_b[k] + 1.0) * pbathpre[k] + coeff_c[k] * (p[i] - pp[i]);
+              p_bath[k][i] = coeff_a[k] * pbathcur[k] + coeff_bplusone[k] * pp_bath[k][i] + coeff_c[k] * p_pp_diff;
               // consider to add a noisy term to account for the thermal fluctuations
+              // reset the previous values
+              pp_bath[k][i] = pbathcur[k];
             }
             // reset the previous values
             pp[i] = pcur;
-            for (size_t k = 0; k < num_bath; k++)
-            {
-              pp_bath[k][i] = pbathcur[k];
-            }
+            //for (size_t k = 0; k < num_bath; k++)
+            //{
+            //  pp_bath[k][i] = pbathcur[k];
+            //}
           }
         }
       }
     }
   }
+
+  //std::chrono::high_resolution_clock::time_point t3 = std::chrono::high_resolution_clock::now();
+  //std::chrono::duration<double> time_span3 = std::chrono::duration_cast< std::chrono::duration<double> >(t3 - t2);
+  //std::cout << "Update Bath Lorentz medium for loop takes " << time_span3.count() << " seconds." << std::endl;
 }
 
 void bath_lorentzian_susceptibility::dump_params(h5file *h5f, size_t *start) {
