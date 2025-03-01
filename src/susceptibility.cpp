@@ -389,7 +389,7 @@ void bath_lorentzian_susceptibility::init_internal_data(realnum *W[NUM_FIELD_COM
     }
   }
 
-  master_printf("Using Bath-Lorentzian: num_bath = %d \n", num_bath);
+  //master_printf("Using Bath-Lorentzian: num_bath = %d \n", num_bath);
   //for (int i = 0; i < num_bath; i++)
   //{
   //  printf("bath freq = %.5E\n", bath_frequencies[i]);
@@ -401,8 +401,8 @@ void bath_lorentzian_susceptibility::init_internal_data(realnum *W[NUM_FIELD_COM
   //size_t sz_bath = sizeof(realnum) * 2 * gv.ntot() * num_bath;
   //printf("size_bath = %d\n", sz_bath);
 
-  printf("Bath-Lorentzian param freq = %.5E\n", this->lorentzian_susceptibility::omega_0);
-  printf("Bath-Lorentzian param gamma = %.5E\n", this->lorentzian_susceptibility::gamma);
+  //master_printf("Bath-Lorentzian param freq = %.5E\n", this->lorentzian_susceptibility::omega_0);
+  //master_printf("Bath-Lorentzian param gamma = %.5E\n", this->lorentzian_susceptibility::gamma);
   //printf("conventional Lorentzian param no_omega_0_denominator = %d\n", this->lorentzian_susceptibility::no_omega_0_denominator);
 }
 
