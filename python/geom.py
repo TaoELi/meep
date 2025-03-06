@@ -852,8 +852,8 @@ class BathLorentzianSusceptibility(LorentzianSusceptibility):
     density is modeled via the coupling to explicit bath oscillators instead of a phenomenological damping
     used in usual Lorentzian susceptibility. 
     """
-    def __init__(self, num_bath=0, bath_width=None, bath_form=None,
-                 bath_frequencies=None, bath_couplings=None, bath_gammas=None, **kwargs):
+    def __init__(self, num_bath=0, bath_width=None, bath_form=None, bath_dephasing=None,
+                 bath_frequencies=None, bath_couplings=None, bath_gammas=None, noise_amp=0.0, **kwargs):
         """
         num_bath: number of bath oscillators along each dimension in each spatial grid point.
         When num_bath = 0, this class is reduced to **LorentzianSusceptibility**.
@@ -886,23 +886,28 @@ class BathLorentzianSusceptibility(LorentzianSusceptibility):
         self.bath_frequencies = bath_frequencies.copy() if bath_frequencies is not None else []
         self.bath_couplings = bath_couplings.copy() if bath_couplings is not None else []
         self.bath_gammas = bath_gammas.copy() if bath_gammas is not None else []
+        self.noise_amp = noise_amp
 
         # then try to apply the indirect definition
-        if num_bath >= 2 and bath_width is not None and bath_form is not None:
+        if num_bath >= 2 and bath_width is not None and bath_form is not None and bath_dephasing is not None:
+            if len(self.bath_gammas) == 0:
+                self.bath_gammas = [self.gamma] * num_bath
             bath_frequencies = np.linspace(-bath_width/2.0, bath_width/2.0, num_bath)
             rho_omega = 1.0 / (bath_frequencies[1] - bath_frequencies[0])
             # The final 2pi factor is used because 2pi is not used within MEEP C++ for converting k
-            k = (2.0 / np.pi / rho_omega * self.gamma)**0.5 * 2.0 * np.pi 
+            k = (2.0 / np.pi / rho_omega * bath_dephasing)**0.5 * 2.0 * np.pi 
             if bath_form == "uniform":
                 bath_couplings = [k] * num_bath
             elif bath_form == "lorentzian":
                 # the 1.5 prefactor accounts for the poles from the Lorentz function
-                bath_couplings =  (k * (1.5 * self.gamma**2 / (self.gamma**2 + (bath_frequencies)**2) )**(0.5)).tolist()
+                bath_linewidth = bath_dephasing + self.gamma
+                renormalization_factor = (2.0 * bath_linewidth + self.bath_gammas[0]) / bath_linewidth / 2.0
+                print("renormalization_factor = ", renormalization_factor)
+                bath_couplings =  (k * (renormalization_factor * bath_linewidth**2 / (bath_linewidth**2 + (bath_frequencies)**2) )**(0.5)).tolist()
             else:
                 raise RuntimeError("bath_form is ill definited, only uniform and lorentzian are supported!")
             self.bath_frequencies = (bath_frequencies + self.frequency).tolist()
             self.bath_couplings = bath_couplings
-            self.bath_gammas = [self.gamma] * num_bath
 
 class NoisyDrudeSusceptibility(DrudeSusceptibility):
     """

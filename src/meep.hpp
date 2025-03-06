@@ -306,10 +306,11 @@ public:
                                  const std::vector<realnum> &bath_frequencies,
                                  const std::vector<realnum> &bath_couplings,
                                  const std::vector<realnum> &bath_gammas,
+                                 realnum noise_amp,
                                  bool no_omega_0_denominator = false)
       : lorentzian_susceptibility(omega_0, gamma, no_omega_0_denominator), num_bath(num_bath),
         bath_frequencies(bath_frequencies), bath_couplings(bath_couplings),
-        bath_gammas(bath_gammas) {}
+        bath_gammas(bath_gammas), noise_amp(noise_amp) {}
 
   virtual susceptibility *clone() const { return new bath_lorentzian_susceptibility(*this); }
 
@@ -325,7 +326,7 @@ public:
 
   virtual void dump_params(h5file *h5f, size_t *start);
   virtual int get_num_params() {
-    return 5 + num_bath * 3 + 1;
+    return 5 + num_bath * 3 + 2;
   }
 
 protected:
@@ -334,6 +335,7 @@ protected:
   std::vector<realnum>
       bath_couplings; // Coupling constants between the Lorentz medium and each bath oscillator
   std::vector<realnum> bath_gammas; // decay rate of each bath oscillator
+  realnum noise_amp; // random noise :)
 };
 
 typedef enum { GYROTROPIC_LORENTZIAN, GYROTROPIC_DRUDE, GYROTROPIC_SATURATED } gyrotropy_model;

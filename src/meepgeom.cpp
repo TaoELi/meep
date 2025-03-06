@@ -1845,14 +1845,14 @@ void geom_epsilon::add_susceptibilities(meep::field_type ft, meep::structure *s)
       if (meep::verbosity > 0) master_printf("multilevel atom susceptibility\n");
     }
     else {
-      if (noisy) {
-        sus = new meep::noisy_lorentzian_susceptibility(ss->noise_amp, ss->frequency, ss->gamma,
-                                                        ss->drude);
-      }
-      else if (bath_lorentzian) {
+      if (bath_lorentzian) {
         sus = new meep::bath_lorentzian_susceptibility(ss->frequency, ss->gamma,
           ss->num_bath, ss->bath_frequencies, ss->bath_couplings, 
-          ss->bath_gammas, ss->drude);
+          ss->bath_gammas, ss->noise_amp, ss->drude);
+      }
+      else if (noisy) {
+        sus = new meep::noisy_lorentzian_susceptibility(ss->noise_amp, ss->frequency, ss->gamma,
+                                                        ss->drude);
       }
       else if (gyrotropic) {
         meep::gyrotropy_model model = ss->saturated_gyrotropy ? meep::GYROTROPIC_SATURATED

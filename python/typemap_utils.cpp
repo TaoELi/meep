@@ -724,6 +724,10 @@ static PyObject *susceptibility_to_py_obj(const susceptibility_struct *s) {
     }
     PyObject_SetAttrString(res, "bath_gammas", py_bath_gammas);
     Py_DECREF(py_bath_gammas);
+
+    PyObject *py_noise = PyFloat_FromDouble(s->noise_amp);
+    PyObject_SetAttrString(res, "noise_amp", py_noise);
+    Py_DECREF(py_noise);
   }
   else if (s->saturated_gyrotropy || s->bias.x || s->bias.y || s->bias.z) {
     if (s->saturated_gyrotropy) {

@@ -435,6 +435,7 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
   const realnum omega0dtsqr = omega2pi * omega2pi * dt * dt;
   const realnum gamma1inv = 1 / (1 + g2pi * dt / 2), gamma1 = (1 - g2pi * dt / 2);
   const realnum omega0dtsqr_denom = no_omega_0_denominator ? 0 : omega0dtsqr;
+  const realnum amp = omega2pi * noise_amp * sqrt(g2pi) * dt * dt / (1 + g2pi * dt / 2);
   (void)W_prev; // unused;
 
   // let's define some prefactors necessary for bath_lorentzian calculations
@@ -476,7 +477,7 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
   //realnum ap = 1.0 + dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
   //realnum prefactor_pnminus = 1.0 - dt / 2.0 * std::inner_product(bath_couplings.begin(), bath_couplings.end(), coeff_c.begin(), 0.0);
 
-  realnum ap = 1.0, prefactor_pnminus = 1.0;
+  realnum ap = 1.0 + g2pi * dt / 2, prefactor_pnminus = 1.0 - g2pi * dt / 2;
   for (int i = 0; i < num_bath; i++)
   {
     ap += dt / 2.0 * bath_couplings[i] * coeff_c[i];
@@ -583,6 +584,8 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
             {
               //p_bath[k][i] = coeff_a[k] * pbathcur[k] + (coeff_b[k] + 1.0) * pbathpre[k] + coeff_c[k] * (p[i] - pp[i]);
               p_bath[k][i] = coeff_a[k] * pbathcur[k] + coeff_bplusone[k] * pp_bath[k][i] + coeff_c[k] * p_pp_diff;
+              if (noise_amp > 1e-10)
+                p_bath[k][i] += gaussian_random(0, amp * sqrt(s[i]));
               // consider to add a noisy term to account for the thermal fluctuations
               // reset the previous values
               pp_bath[k][i] = pbathcur[k];
@@ -606,7 +609,7 @@ void bath_lorentzian_susceptibility::update_P(realnum *W[NUM_FIELD_COMPONENTS][2
 
 void bath_lorentzian_susceptibility::dump_params(h5file *h5f, size_t *start) {
   // Total parameters: 5 base + 1 for num_bath + 3 per bath oscillator.
-  size_t num_params = 6 + num_bath * 3;
+  size_t num_params = 7 + num_bath * 3;
   size_t params_dims[1] = {num_params};
 
   // Allocate a dynamic array to hold all parameters.
@@ -621,9 +624,10 @@ void bath_lorentzian_susceptibility::dump_params(h5file *h5f, size_t *start) {
 
   // Add the number of bath oscillators.
   params_data[5] = (realnum)num_bath;
+  params_data[6] = (realnum)noise_amp;
 
   // Fill in the bath oscillator parameters.
-  size_t index = 6;
+  size_t index = 7;
   for (int i = 0; i < num_bath; ++i) {
     params_data[index++] = bath_frequencies[i];
     params_data[index++] = bath_couplings[i];
